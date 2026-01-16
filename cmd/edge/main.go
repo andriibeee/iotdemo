@@ -19,6 +19,8 @@ import (
 	"github.com/andriibeee/iotdemo/pkg/retry"
 )
 
+var ErrRateLimited = fmt.Errorf("rate limited")
+
 func main() {
 	addr := flag.String("addr", "http://localhost:8080", "sink address")
 	sensor := flag.String("sensor", "edge-sensor-1", "sensor name")
@@ -166,13 +168,15 @@ func sendWithRetry(ctx context.Context, client *fasthttp.Client, addr string, ev
 
 		code := resp.StatusCode()
 		switch {
-		case code == 202:
+		case code == fasthttp.StatusAccepted:
 			return nil
-		case code == 409:
+		// fail silently on dupes
+		case code == fasthttp.StatusConflict:
 			return nil
-		case code == 429:
-			return fmt.Errorf("rate limited")
-		case code >= 500:
+		// error cases
+		case code == fasthttp.StatusTooManyRequests:
+			return ErrRateLimited
+		case code >= fasthttp.StatusInternalServerError:
 			return fmt.Errorf("server error: %d", code)
 		default:
 			return fmt.Errorf("%w: unexpected status: %d", retry.ErrStop, code)
